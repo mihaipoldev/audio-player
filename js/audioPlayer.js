@@ -5,17 +5,16 @@
  */
 
 $(function() {
-	var canvas, ctx, source, context, analyser, fbc_array, bars, bar_x, bar_width, bar_height;
-	var timeout, startTime = 0;
-	var urlToSave;
-	var token;
-	var analyserArray = '';
-
 	/*
-	 *  Global Variables
+	 *  Variables
 	 */
-	var audio,
-		$btnPlay = $('#audio-player #play'),
+	var wavesurfer = WaveSurfer.create({
+		container: '#waveform',
+		height: 80,
+		barWidth: 1
+	});
+
+	var $btnPlay = $('#audio-player #play'),
 		$btnPause = $('#audio-player #pause'),
 		$btnStop = $('#audio-player #stop'),
 		$btnNext = $('#audio-player #next'),
@@ -29,8 +28,14 @@ $(function() {
 		$progressBar = $('#audio-player #progress-bar');
 
 	/*
-	 *  Helper functions
+	 *  Functions
 	 */
+	function initWavesurfer($element) {
+		var url = $element.data('url');
+		wavesurfer.load(url);
+		$activeTrack = $element;
+	}
+
 	function timecode(ms) {
 		var hms = {
 			h: Math.floor(ms / (60 * 60 * 1000)),
@@ -50,22 +55,34 @@ $(function() {
 		return time.join('.');
 	}
 
-	function updateDisplayTime() {
-		$(audio).bind('timeupdate', function() {
-			$currentTime.html(timecode(audio.currentTime));
-			$progress.css('width', getProgress(audio.duration, audio.currentTime) + '%');
-		});
-	}
-
-	function getProgress() {
+	function getProgressPercentage() {
 		if (wavesurfer.getCurrentTime() > 0) {
 			return Math.floor((100 / wavesurfer.getDuration()) * wavesurfer.getCurrentTime());
 		}
+		return 0;
 	}
 
-	function initWavesurfer($element) {
-		var url = $element.data('url');
-		wavesurfer.load(url);
+	function bindTimeUpdate() {
+		$(audio).bind('timeupdate', function() {
+			$currentTime.html(timecode(audio.currentTime));
+			$progress.css('width', getProgressPercentage() + '%');
+		});
+	}
+
+	function getNext(){
+		var $next = $activeTrack.next();
+		if ($next.length == 0) {
+			$next = $playlistItems.first();
+		}
+		return $next;
+	}
+
+	function getPrev(){
+		var $prev = $activeTrack.prev();
+		if ($prev.length == 0) {
+			$prev = $playlistItems.last();
+		}
+		return $prev;
 	}
 
 	function play(){
@@ -74,72 +91,68 @@ $(function() {
 		$btnPlay.addClass('hidden');
 		$btnPause.removeClass('hidden');
 
-		updateDisplayTime();
+		bindTimeUpdate();
+	}
+
+	function pause(){
+		wavesurfer.pause();
+
+		$btnPause.addClass('hidden');
+		$btnPlay.removeClass('hidden');
+	}
+
+	function stop(){
+		wavesurfer.stop();
+
+		$btnPause.addClass('hidden');
+		$btnPlay.removeClass('hidden');
+
+		bindTimeUpdate();
+	}
+
+	function change($element){
+		wavesurfer.stop();
+		initWavesurfer($element);
+
+		if(!wavesurfer.isPaused()){
+			play();
+		}
 	}
 
 	/*
 	 *  With WaveSurfer
 	 */
-	var wavesurfer = WaveSurfer.create({
-		container: '#waveform',
-		height: 80,
-		barWidth: 1
-	});
 
 	wavesurfer.load('media/mihai-pol-goneta.wav');
 
 	wavesurfer.on('ready', function() {
-		$btnPlay.on('click', function() {
+
+		$btnPlay.on('click', function(){
 			play();
 		});
 
-		$btnPause.on('click', function() {
-			wavesurfer.pause();
-
-			$btnPause.addClass('hidden');
-			$btnPlay.removeClass('hidden');
+		$btnPause.on('click', function(){
+			pause()
 		});
 
-		$btnStop.on('click', function() {
-			wavesurfer.stop();
-
-			$btnPause.addClass('hidden');
-			$btnPlay.removeClass('hidden');
-
-			updateDisplayTime();
+		$btnStop.on('click', function(){
+			stop()
 		});
 
-		$btnNext.on('click', function() {
-			wavesurfer.stop();
-
-			$activeTrack = $activeTrack.next();
-			if ($activeTrack.next().length == 0) {
-				$activeTrack = $playlistItems.first();
-			}
-
-			initWavesurfer($activeTrack);
-			play();
+		$btnNext.on('click', function(){
+			change(getNext())
 		});
 
-		$btnPrev.on('click', function() {
-			wavesurfer.stop();
-
-			$activeTrack = $activeTrack.prev();
-			if ($activeTrack.length == 0) {
-				$activeTrack = $playlistItems.last();
-			}
-
-			initWavesurfer($activeTrack);
-			play();
+		$btnPrev.on('click', function(){
+			change(getPrev())
 		});
 
-		$playlistItems.on('click', function() {
-			audio.pause();
-			initAndPlay($(this));
+		$playlistItems.on('click',function(){
+			change($(this))
 		});
 
 		$volume.on('change', function() {
-			audio.volume = parseFloat($volume.val() / 10);
+			wavesurfer.setVolume(parseFloat($volume.val() / 10));
 		});
 
 		$progressBar.on('click', function() {
@@ -152,52 +165,31 @@ $(function() {
 			$currentTime.html(audio.currentTime);
 		});
 
-
-		$btnPause.on('click', function() {
-			audio.pause();
-			wavesurfer.pause();
-
-			$btnPause.addClass('hidden');
-			$btnPlay.removeClass('hidden');
-		});
-
-		$progressBar.on('click', function() {
-			var mouseX = event.pageX - $progress.offset().left,
-				progressPercentage = Math.round(mouseX / $progressBar.width() * 100 * 100) / 100,
-				progressTime = progressPercentage / 100 * audio.duration;
-
-			audio.currentTime = Math.round(progressTime);
-			$progress.css('width', progressPercentage + '%');
-			$currentTime.html(audio.currentTime);
-
-			wavesurfer.seekTo(progressPercentage / 100);
-
-		});
 	});
-
-
-	// Fast forwards the audio file by 30 seconds.
-	function forwardAudio() {
-
-		// Check for audio element support.
-		if (window.HTMLAudioElement) {
-			try {
-				var oAudio = document.getElementById('myaudio');
-				oAudio.currentTime += 30.0;
-			}
-			catch (e) {
-		// Fail silently but show in F12 developer tools console
-				if (window.console && console.error("Error:" + e));
-			}
-		}
-	}
 });
 
 
-/*
- *  Audio Player
- */
 // $(function(){
+// Fast forwards the audio file by 30 seconds.
+// function forwardAudio() {
+//
+// 	// Check for audio element support.
+// 	if (window.HTMLAudioElement) {
+// 		try {
+// 			var oAudio = document.getElementById('myaudio');
+// 			oAudio.currentTime += 30.0;
+// 		}
+// 		catch (e) {
+// 			// Fail silently but show in F12 developer tools console
+// 			if (window.console && console.error("Error:" + e));
+// 		}
+// 	}
+// }
+// var canvas, ctx, source, context, analyser, fbc_array, bars, bar_x, bar_width, bar_height;
+// var timeout, startTime = 0;
+// var urlToSave;
+// var token;
+// var analyserArray = '';
 // function initAudio($element) {
 // 	audio = new Audio(['media/mihai-pol-goneta.ogg', 'media/mihai-pol-goneta.mp3']);
 //
@@ -329,11 +321,7 @@ $(function() {
 // 		$currentTime.html(audio.currentTime);
 // 	});
 // });
-
-//  TODO
 //  shuffle playlist
-
-
 // $('#vol').slider( {
 // 	value : audio.volume*100,
 // 	slide : function(ev, ui) {
